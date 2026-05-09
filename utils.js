@@ -12,6 +12,14 @@ import GLib from 'gi://GLib';
 import Soup from 'gi://Soup';
 import GdkPixbuf from 'gi://GdkPixbuf';
 
+// Promisify async file ops once so we can `await` them cleanly. Gio
+// throws if a method is promisified twice, so guard against re-imports.
+if (!Gio.File.prototype.replace_contents_async[Symbol.for('promisified')]) {
+    Gio._promisify(Gio.File.prototype, 'replace_contents_async');
+    Gio._promisify(Gio.File.prototype, 'load_contents_async');
+    Gio.File.prototype.replace_contents_async[Symbol.for('promisified')] = true;
+}
+
 // utils.js is imported from both extension.js (shell context) and
 // prefs.js (prefs process); their gettext sources live behind
 // different ESM resource paths, so importing one would break the
@@ -598,46 +606,38 @@ export async function exportBingJSON(settings) {
     let filepath = getWallpaperDir(settings) + 'bing.json';
     let file = Gio.file_new_for_path(filepath);
 
-    const [etag] = await file.replace_contents_async(
-        json,
-        null,
-        false,
-        Gio.FileCreateFlags.REPLACE_DESTINATION,
-        null,
-        (file, res) => {
-            try {
-                file.replace_contents_finish(res);
-            } 
-            catch(e) {
-                BingLog('error saving bing-json from '+filepath+': '+e);
-            }
-        }
-    );
+    try {
+        await file.replace_contents_async(
+            new TextEncoder().encode(json),
+            null,
+            false,
+            Gio.FileCreateFlags.REPLACE_DESTINATION,
+            null
+        );
+    }
+    catch (e) {
+        BingLog('error saving bing-json from '+filepath+': '+e);
+    }
 }
 
 export async function importBingJSON(settings) {
     const decoder = new TextDecoder();
     let filepath = getWallpaperDir(settings) + 'bing.json';
     let file = Gio.file_new_for_path(filepath);
-    if (file.query_exists(null)) {
-        const [contents, etag] = await file.load_contents_async(null,
-            (file, res) => {
-                try {
-                    BingLog('JSON import success');
-                    let parsed = JSON.parse(decoder.decode(contents)); // FIXME: triggers GJS warning without the conversion, need to investigate
-                    // need to implement some checks for validity here
-                    mergeImageLists(settings, parsed);
-                    purgeImages(settings); // remove the older missing images
-                    file.load_contents_finish(res);
-                }
-                catch (e) {
-                    BingLog('error loading bing-json '+filepath+' - '+e);
-                }
-            }
-        );
-    }
-    else {
+    if (!file.query_exists(null)) {
         BingLog('JSON import file not found');
+        return;
+    }
+    try {
+        const [contents] = await file.load_contents_async(null);
+        BingLog('JSON import success');
+        const parsed = JSON.parse(decoder.decode(contents));
+        // need to implement some checks for validity here
+        mergeImageLists(settings, parsed);
+        purgeImages(settings); // remove the older missing images
+    }
+    catch (e) {
+        BingLog('error loading bing-json '+filepath+' - '+e);
     }
 }
 
