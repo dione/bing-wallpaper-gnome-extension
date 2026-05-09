@@ -1179,6 +1179,12 @@ class BingWallpaperIndicator extends Button {
         this._timeout = undefined;
         this._shuffleTimeout = undefined;
 
+        // The settings handlers were never disconnected, so each
+        // enable→disable cycle stacked another set on top of the
+        // cached Gio.Settings object. Drop them now.
+        this._unsetConnections();
+        this.settings_connections = [];
+
         if (this.httpSession) {
             this.httpSession.abort();
             this.httpSession = null;
