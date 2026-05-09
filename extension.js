@@ -102,7 +102,7 @@ class BingWallpaperIndicator extends Button {
         this.imageURL = ""; // link to image itself
         this.imageinfolink = ""; // link to Bing photo info page
         this.refreshdue = 0;
-        this.shuffledue = 0;
+        this.shuffledue = null;
         this.refreshduetext = "";
         this.thumbnail = null;
         this.thumbnailItem = null;
@@ -759,8 +759,10 @@ class BingWallpaperIndicator extends Button {
             GLib.source_remove(this._shuffleTimeout);
 
         if (seconds == null) {
-            let diff = -Math.floor(GLib.DateTime.new_now_local().difference(this.shuffledue)/1000000);
-            BingLog('shuffle ('+this.shuffledue.format_iso8601()+') diff = '+diff);
+            let diff = this.shuffledue
+                ? -Math.floor(GLib.DateTime.new_now_local().difference(this.shuffledue)/1000000)
+                : 0;
+            BingLog('shuffle ('+(this.shuffledue ? this.shuffledue.format_iso8601() : 'unset')+') diff = '+diff);
             if (diff > 30) { // on occasions the above will be 1 second
                 seconds = diff; // if not specified, we should maintain the existing shuffle timeout (i.e. we just restored from saved state)
             }
@@ -989,7 +991,7 @@ class BingWallpaperIndicator extends Button {
                 longstartdate: this.longstartdate, imageinfolink: this.imageinfolink, imageURL: this.imageURL,
                 filename: this.filename, favourite: this.favourite_status, width: this.dimensions.width, 
                 height: this.dimensions.height, 
-                shuffledue: (this.shuffledue.to_unix? this.shuffledue.to_unix():0)
+                shuffledue: (this.shuffledue && this.shuffledue.to_unix ? this.shuffledue.to_unix() : 0)
             };
             let stateJSON = JSON.stringify(state);
             
@@ -1018,7 +1020,9 @@ class BingWallpaperIndicator extends Button {
             this.dimensions.width = state.width;
             this.dimensions.height = state.height;
             this._selected_image = this._settings.get_string('selected-image');
-            this.shuffledue = ("shuffledue" in state)? GLib.DateTime.new_from_unix_local(state.shuffledue) : 0;
+            this.shuffledue = ("shuffledue" in state && state.shuffledue)
+                ? GLib.DateTime.new_from_unix_local(state.shuffledue)
+                : null;
             this.favourite_status = ("favourite" in state && state.favourite === true);
             // update menus and thumbnail
             this._setMenuText();
