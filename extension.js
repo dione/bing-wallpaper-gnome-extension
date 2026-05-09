@@ -463,6 +463,11 @@ class BingWallpaperIndicator extends Button {
     }
 
     _setControls() {
+        // _setControls is also called from `changed::controls-icon-size`,
+        // so reset the row first — otherwise every icon-size change
+        // appended six new buttons (and their signal handlers) on top
+        // of the previous batch.
+        this.controlItem.remove_all_children();
         this.favouriteBtn = this._newMenuIcon(
             this.favourite_status?this.ICON_FAVE_BUTTON:this.ICON_UNFAVE_BUTTON,
             this.controlItem, 
