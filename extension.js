@@ -1129,7 +1129,7 @@ class BingWallpaperIndicator extends Button {
         }
         catch (error) {
             BingLog('Unable download image '+error);
-            notifyError('Image '+file.get_path()+' file error, check folder permissions, disk space or select a different folder\n'+e);
+            notifyError('Image '+file.get_path()+' file error, check folder permissions, disk space or select a different folder\n'+error);
         }
     }
 
