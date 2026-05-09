@@ -25,6 +25,9 @@ import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/ex
 import * as Utils from './utils.js';
 import Thumbnail from './thumbnail.js';
 
+// Wire utils.js' fallback translator to the shell-side gettext.
+Utils.setGettext(_);
+
 const BingImageURL = Utils.BingImageURL;
 const BingURL = 'https://www.bing.com';
 const IndicatorName = 'BingWallpaperIndicator';

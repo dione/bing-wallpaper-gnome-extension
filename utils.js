@@ -12,6 +12,16 @@ import GLib from 'gi://GLib';
 import Soup from 'gi://Soup';
 import GdkPixbuf from 'gi://GdkPixbuf';
 
+// utils.js is imported from both extension.js (shell context) and
+// prefs.js (prefs process); their gettext sources live behind
+// different ESM resource paths, so importing one would break the
+// other. Default to an identity translator and let consumers replace
+// it if they want translated output.
+let _ = (str) => str;
+export function setGettext(fn) {
+    _ = fn;
+}
+
 export var BING_SCHEMA = 'org.gnome.shell.extensions.bingwallpaper';
 export var DESKTOP_SCHEMA = 'org.gnome.desktop.background';
 

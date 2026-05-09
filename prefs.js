@@ -15,6 +15,9 @@ import Adw from 'gi://Adw';
 import {ExtensionPreferences, gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 import * as Config from 'resource:///org/gnome/Shell/Extensions/js/misc/config.js';
 import * as Utils from './utils.js';
+
+// Wire utils.js' fallback translator to the prefs-side gettext.
+Utils.setGettext(_);
 /*import Carousel from './carousel.js';*/
 
 const BingImageURL = Utils.BingImageURL;
