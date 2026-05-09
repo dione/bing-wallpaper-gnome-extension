@@ -826,7 +826,7 @@ class BingWallpaperIndicator extends Button {
             
             Utils.purgeImages(this._settings); // delete older images if enabled
             //Utils.cleanupImageList(this._settings); // merged into purgeImages
-            this._downloadAllImages(); // fetch missing images that are still available
+            this._downloadAllImages().catch(e => BingLog('downloadAllImages: ' + e));
             Utils.populateImageListResolutions(this._settings);
             
             if (newImages.length > 0 && this._settings.get_boolean('revert-to-current-image')) {
@@ -1075,17 +1075,24 @@ class BingWallpaperIndicator extends Button {
         this._restartTimeout(60);
     }
 
-    _downloadAllImages() {
-        // fetch recent undownloaded images       
+    async _downloadAllImages() {
+        // fetch recent undownloaded images sequentially so we don't
+        // hammer Bing with up to 8 parallel sockets on the main loop.
         let imageList = Utils.getFetchableImageList(this._settings);
         let BingWallpaperDir = Utils.getWallpaperDir(this._settings);
-        imageList.forEach( (image) => {
-            let resolution = Utils.getResolution(this._settings, image);
-            let filename = Utils.toFilename(BingWallpaperDir, image.startdate, image.urlbase, resolution);
-            let url = this._imageURL(image.urlbase, resolution);
-            let file = Gio.file_new_for_path(filename);
-            this._downloadImage(url, file, false);
-        });
+        for (const image of imageList) {
+            if (!this.httpSession)
+                return;
+            const resolution = Utils.getResolution(this._settings, image);
+            const filename = Utils.toFilename(BingWallpaperDir, image.startdate, image.urlbase, resolution);
+            const url = this._imageURL(image.urlbase, resolution);
+            const file = Gio.file_new_for_path(filename);
+            try {
+                await this._downloadImage(url, file, false);
+            } catch (e) {
+                BingLog('downloadAll item failed: ' + e);
+            }
+        }
     }
 
     // download and process new image
