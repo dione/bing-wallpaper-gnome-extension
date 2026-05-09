@@ -88,7 +88,8 @@ export function validate_interval(settings) {
 export function validate_imagename(settings) {
     let filename = settings.get_string('selected-image');
 
-    if (filename != 'current' || filename != 'random') // FIXME: remove this when we move to new shuffle mode
+    // Skip validation for the special sentinel values
+    if (filename == 'current' || filename == 'random')
         return;
 
     if (!inImageList(getImageList(settings), filename)) {
