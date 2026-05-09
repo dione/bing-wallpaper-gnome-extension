@@ -17,6 +17,9 @@ import GdkPixbuf from 'gi://GdkPixbuf';
 if (!Gio.File.prototype.replace_contents_async[Symbol.for('promisified')]) {
     Gio._promisify(Gio.File.prototype, 'replace_contents_async');
     Gio._promisify(Gio.File.prototype, 'load_contents_async');
+    Gio._promisify(Gio.File.prototype, 'enumerate_children_async');
+    Gio._promisify(Gio.File.prototype, 'move_async');
+    Gio._promisify(Gio.FileEnumerator.prototype, 'next_files_async');
     Gio.File.prototype.replace_contents_async[Symbol.for('promisified')] = true;
 }
 
@@ -481,25 +484,53 @@ export function shortenName(string, limit) {
     return string;
 }
 
-export function moveImagesToNewFolder(settings, oldPath, newPath) {
-    // possible race condition here, need to think about how to fix it
-    //let BingWallpaperDir = settings.get_string('download-folder');
+export async function moveImagesToNewFolder(settings, oldPath, newPath) {
+    // Async enumeration + move so a 30+ image folder doesn't freeze
+    // the shell while the user waits for the folder picker result.
     let dir = Gio.file_new_for_path(oldPath);
-    let dirIter = dir.enumerate_children('', Gio.FileQueryInfoFlags.NONE, null );
     let newDir = Gio.file_new_for_path(newPath);
-    if (!newDir.query_exists(null)) {
+    if (!newDir.query_exists(null))
         newDir.make_directory_with_parents(null);
+
+    let dirIter;
+    try {
+        dirIter = await dir.enumerate_children_async(
+            '',
+            Gio.FileQueryInfoFlags.NONE,
+            GLib.PRIORITY_DEFAULT,
+            null
+        );
+    } catch (e) {
+        BingLog('moveImagesToNewFolder enumerate failed: ' + e);
+        return;
     }
-    let file = null;
-    while (file = dirIter.next_file(null)) {
-        let filename = file.get_name(); // we only want to move files that we think we own
-        if (filename.match(/\d{8}\-.+\.jpg/i)) {
+
+    while (true) {
+        let infos;
+        try {
+            infos = await dirIter.next_files_async(32, GLib.PRIORITY_DEFAULT, null);
+        } catch (e) {
+            BingLog('moveImagesToNewFolder next_files failed: ' + e);
+            break;
+        }
+        if (!infos || infos.length === 0)
+            break;
+        for (const info of infos) {
+            const filename = info.get_name();
+            if (!filename.match(/\d{8}\-.+\.jpg/i))
+                continue;
             BingLog('file: ' + slash(oldPath) + filename + ' -> ' + slash(newPath) + filename);
-            let cur = Gio.file_new_for_path(slash(oldPath) + filename);
-            let dest = Gio.file_new_for_path(slash(newPath) + filename);
-            cur.move(dest, Gio.FileCopyFlags.OVERWRITE, null, function () { BingLog ('...moved'); });
+            const cur = Gio.file_new_for_path(slash(oldPath) + filename);
+            const dest = Gio.file_new_for_path(slash(newPath) + filename);
+            try {
+                await cur.move_async(dest, Gio.FileCopyFlags.OVERWRITE, GLib.PRIORITY_DEFAULT, null, null);
+            } catch (e) {
+                BingLog('move failed for ' + filename + ': ' + e);
+            }
         }
     }
+    dirIter.close(null);
+
     // correct filenames for GNOME backgrounds
     if (settings.get_boolean('set-background'))
         moveBackground(oldPath, newPath, DESKTOP_SCHEMA);

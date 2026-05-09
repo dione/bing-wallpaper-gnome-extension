@@ -193,7 +193,8 @@ export default class BingWallpaperExtensionPreferences extends ExtensionPreferen
             dirChooser.select_folder(window, null, (self, res) => {
                 let new_path = self.select_folder_finish(res).get_uri().replace('file://', '');
                 BingLog(new_path);
-                Utils.moveImagesToNewFolder(settings, Utils.getWallpaperDir(settings), new_path);
+                Utils.moveImagesToNewFolder(settings, Utils.getWallpaperDir(settings), new_path)
+                    .catch(e => BingLog('moveImagesToNewFolder error: ' + e));
                 Utils.setWallpaperDir(settings, new_path);
             });
 
