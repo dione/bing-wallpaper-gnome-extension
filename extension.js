@@ -746,7 +746,14 @@ class BingWallpaperIndicator extends Button {
         if (seconds == null)
             seconds = TIMEOUT_SECONDS;
         
-        this._timeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, seconds, this._refresh.bind(this));
+        // _refresh is async — its return value is a Promise (truthy),
+        // which GLib treats as SOURCE_CONTINUE and would re-fire the
+        // already-replaced timer on every tick. Wrap and return
+        // SOURCE_REMOVE explicitly.
+        this._timeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, seconds, () => {
+            this._refresh();
+            return GLib.SOURCE_REMOVE;
+        });
         this.refreshdue = GLib.DateTime.new_now_local().add_seconds(seconds);
         BingLog('next check in ' + seconds + ' seconds');
     }
@@ -776,7 +783,13 @@ class BingWallpaperIndicator extends Button {
             }
         }
 
-        this._shuffleTimeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, seconds, this._selectImage.bind(this, true));
+        // Same async-callback caveat as _restartTimeout: return
+        // SOURCE_REMOVE so GLib doesn't re-fire the timer on the
+        // Promise return value of _selectImage.
+        this._shuffleTimeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, seconds, () => {
+            this._selectImage(true);
+            return GLib.SOURCE_REMOVE;
+        });
         this.shuffledue = GLib.DateTime.new_now_local().add_seconds(seconds);
         BingLog('next shuffle in ' + seconds + ' seconds');
     }
