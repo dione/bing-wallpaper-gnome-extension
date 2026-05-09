@@ -223,8 +223,19 @@ export default class BingWallpaperExtensionPreferences extends ExtensionPreferen
         });
                     
         // fetch change log (on about page)
-        
+
         if (httpSession)
             Utils.fetch_change_log(this.metadata.version.toString(), change_log, httpSession);
+
+        // The session would otherwise outlive the prefs window, and a
+        // late callback would call set_label() on a destroyed widget.
+        const closeSignal = window.connect('close-request', () => {
+            if (httpSession) {
+                httpSession.abort();
+                httpSession = null;
+            }
+            window.disconnect(closeSignal);
+            return false;
+        });
     }
 }
