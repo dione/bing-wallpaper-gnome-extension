@@ -221,6 +221,10 @@ class BingWallpaperIndicator extends Button {
         // otherwise we trip
         // `soup_message_queue_item_destroy: ... item->msg) == NULL`.
         this._pendingMessages = new Set();
+        // Shared cancellable so stop() can reject in-flight requests
+        // cleanly and their async callbacks return early without
+        // touching the half-destroyed indicator.
+        this._cancellable = new Gio.Cancellable();
     }
 
     // listen for configuration changes
@@ -682,8 +686,9 @@ class BingWallpaperIndicator extends Button {
             try {
                 // Soup 3 callback is (session, asyncResult); the message we
                 // pinned lives in the closure as `request`.
-                await this.httpSession.send_and_read_async(request, GLib.PRIORITY_DEFAULT, null, (httpSession, result) => {
+                await this.httpSession.send_and_read_async(request, GLib.PRIORITY_DEFAULT, this._cancellable, (httpSession, result) => {
                     try {
+                        if (!this.httpSession) return;
                         this._processMessageRefresh(result);
                     } finally {
                         this._pendingMessages?.delete(request);
@@ -692,6 +697,8 @@ class BingWallpaperIndicator extends Button {
             }
             catch(error) {
                 this._pendingMessages?.delete(request);
+                if (error.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                    return;
                 BingLog('unable to send libsoup json message '+error);
                 notifyError('Unable to fetch Bing metadata\n'+error);
             }
@@ -1100,8 +1107,9 @@ class BingWallpaperIndicator extends Button {
             if (Soup.MAJOR_VERSION >= 3) {
                 // Soup 3 callback is (session, asyncResult); pinned msg
                 // lives in the closure as `request`.
-                await this.httpSession.send_and_read_async(request, GLib.PRIORITY_DEFAULT, null, (httpSession, result) => {
+                await this.httpSession.send_and_read_async(request, GLib.PRIORITY_DEFAULT, this._cancellable, (httpSession, result) => {
                     try {
+                        if (!this.httpSession) return;
                         this._processFileDownload(result, file, set_background);
                     } finally {
                         this._pendingMessages?.delete(request);
@@ -1112,6 +1120,7 @@ class BingWallpaperIndicator extends Button {
                 // Soup 2 queue_message callback is (session, soupMessage).
                 this.httpSession.queue_message(request, (httpSession, message) => {
                     try {
+                        if (!this.httpSession) return;
                         this._processFileDownload(message, file, set_background);
                     } finally {
                         this._pendingMessages?.delete(message);
@@ -1121,6 +1130,8 @@ class BingWallpaperIndicator extends Button {
         }
         catch (error) {
             this._pendingMessages?.delete(request);
+            if (error.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                return;
             BingLog('error sending libsoup message '+error);
             notifyError('Network error '+error);
         }
@@ -1185,6 +1196,13 @@ class BingWallpaperIndicator extends Button {
         this._unsetConnections();
         this.settings_connections = [];
 
+        // Cancel before nulling the session so any queued callback
+        // sees `httpSession === null` and bails out instead of calling
+        // `send_and_read_finish` on a destroyed object.
+        if (this._cancellable) {
+            this._cancellable.cancel();
+            this._cancellable = null;
+        }
         if (this.httpSession) {
             this.httpSession.abort();
             this.httpSession = null;
