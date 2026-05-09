@@ -819,15 +819,22 @@ class BingWallpaperIndicator extends Button {
             let parsed = JSON.parse(data);
             let datamarket = parsed.market.mkt;
             let prefmarket = this._settings.get_string('market');
-            let newImages = Utils.mergeImageLists(this._settings, parsed.images);
-            
+
             if (datamarket != prefmarket && prefmarket != 'auto')
                 BingLog('WARNING: Bing returning market data for ' + datamarket + ' rather than selected ' + prefmarket);
-            
-            Utils.purgeImages(this._settings); // delete older images if enabled
-            //Utils.cleanupImageList(this._settings); // merged into purgeImages
+
+            // Single read of bing-json, three transforms in memory, single
+            // write back. Avoids three JSON.parse + JSON.stringify cycles
+            // and an extra `bing-json` write per refresh.
+            const curList = Utils.getImageList(this._settings);
+            const merge = Utils.mergeImageListsInto(curList, parsed.images);
+            const purged = Utils.purgeImagesInto(this._settings, merge.merged);
+            const resolved = Utils.populateImageListResolutionsInto(this._settings, purged);
+            Utils.setImageList(this._settings, resolved);
+            Utils.validate_imagename(this._settings);
+            const newImages = merge.newList;
+
             this._downloadAllImages().catch(e => BingLog('downloadAllImages: ' + e));
-            Utils.populateImageListResolutions(this._settings);
             
             if (newImages.length > 0 && this._settings.get_boolean('revert-to-current-image')) {
                 // user wants to switch to the new image when it arrives

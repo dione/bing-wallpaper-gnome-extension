@@ -290,16 +290,23 @@ export function inImageListByTitle(imageList, title) {
 }
 
 export function mergeImageLists(settings, imageList) {
-    let curList = getImageList(settings);
-    let newList = []; // list of only new images (for future notifications)
-    imageList.forEach(function(x, i) {
-        if (!inImageList(curList, x.urlbase)) {// if not in the list, add it
-            curList.unshift(x); // use unshift to maintain reverse chronological order
-            newList.unshift(x); 
+    const result = mergeImageListsInto(getImageList(settings), imageList);
+    setImageList(settings, imageListSortByDate(result.merged));
+    return result.newList;
+}
+
+// In-memory variant: takes the current list, returns merged + newly added.
+// Useful when the caller wants to chain merge → purge → resolutions
+// without three round-trips through `bing-json`.
+export function mergeImageListsInto(curList, imageList) {
+    const newList = [];
+    imageList.forEach((x) => {
+        if (!inImageList(curList, x.urlbase)) {
+            curList.unshift(x);
+            newList.unshift(x);
         }
     });
-    setImageList(settings, imageListSortByDate(curList)); // sort then save back to settings
-    return newList; // return this to caller for notifications
+    return {merged: curList, newList};
 }
 
 export function imageIndex(imageList, urlbase) {
@@ -317,19 +324,21 @@ export function getImageByIndex(imageList, index) {
 }
 
 export function populateImageListResolutions(settings) {
-    let curList = imageListSortByDate(getImageList(settings));
-    let newList = [];
-    curList.forEach( function (x, i) {
-        let filename = imageToFilename(settings, x);
-        let width, height;
+    const newList = populateImageListResolutionsInto(settings, getImageList(settings));
+    setImageList(settings, newList);
+}
+
+export function populateImageListResolutionsInto(settings, curList) {
+    const sorted = imageListSortByDate(curList);
+    sorted.forEach((x) => {
         if (!x.width || !x.height) {
-            [width, height] = getFileDimensions(filename);
+            const filename = imageToFilename(settings, x);
+            const [width, height] = getFileDimensions(filename);
             x.width = width;
             x.height = height;
         }
-        newList.push(x);
     });
-    setImageList(settings, newList);
+    return sorted;
 }
 
 export function getFetchableImageList(settings) {
@@ -589,34 +598,41 @@ export function purgeImages(settings) {
     
     /*if (deleteprevious === false)
         return;*/
-    let imagelist = imageListSortByDate(getImageList(settings));
-    let origlength = imagelist.length;
-    let cutOff = GLib.DateTime.new_now_utc().add_days(-maxDays); // 8 days ago
-    let newList = [];
-    imagelist.forEach( function (image, i) {
-        var diff = dateFromLongDate(image.fullstartdate, 0).difference(cutOff); // relative age of image, < 0 we can delete
-        // always keep favourites, keep images that are less than minimum period (previous days) or if clean up delete previous is disabled (default)
-        var keep_image = (keepfavourites && image.favourite && image.favourite === true) || diff > 0 || !deleteprevious;
-        var ok_to_delete = !keep_image || (emptytrash && image.hidden);
-        var imageFilename = imageToFilename(settings, image);
-        
+    const newList = purgeImagesInto(settings, getImageList(settings));
+    setImageList(settings, newList);
+    //cleanupImageList(settings);
+    validate_imagename(settings); // if we deleted our current image, we want to reset it to something valid
+}
+
+export function purgeImagesInto(settings, imagelist) {
+    const deleteprevious = settings.get_boolean('delete-previous');
+    const keepfavourites = settings.get_boolean('keep-favourites');
+    const emptytrash = settings.get_boolean('trash-deletes-images');
+    const maxDays = settings.get_int('previous-days');
+    const sorted = imageListSortByDate(imagelist);
+    const origlength = sorted.length;
+    const cutOff = GLib.DateTime.new_now_utc().add_days(-maxDays);
+    const newList = [];
+    sorted.forEach((image) => {
+        const diff = dateFromLongDate(image.fullstartdate, 0).difference(cutOff);
+        const keep_image = (keepfavourites && image.favourite === true) || diff > 0 || !deleteprevious;
+        let ok_to_delete = !keep_image || (emptytrash && image.hidden);
+        const imageFilename = imageToFilename(settings, image);
+
         if (emptytrash && image.hidden && diff < 0)
             ok_to_delete = true;
-        
 
         if (deleteprevious && image != '' && ok_to_delete) {
-            BingLog('deleting '+imageFilename);
+            BingLog('deleting ' + imageFilename);
             deleteImage(imageFilename);
         }
         else {
-            BingLog('keeping '+imageFilename);
+            BingLog('keeping ' + imageFilename);
             newList.push(image);
         }
     });
-    setImageList(settings, newList);
-    BingLog('cleaned up image list, count was '+origlength+' now '+imagelist.length);
-    //cleanupImageList(settings);
-    validate_imagename(settings); // if we deleted our current image, we want to reset it to something valid
+    BingLog('cleaned up image list, count was ' + origlength + ' now ' + newList.length);
+    return newList;
 }
 
 export function openInSystemViewer(filename, is_file = true) {
